@@ -14,7 +14,8 @@ import com.rachelikatz.miniwsa.persistence.projection.AttackerAggregate;
 import com.rachelikatz.miniwsa.persistence.projection.CategoryAggregate;
 import com.rachelikatz.miniwsa.persistence.projection.PathAggregate;
 
-public interface SecurityEventRepository extends JpaRepository<SecurityEventEntity, String> {
+public interface SecurityEventRepository
+		extends JpaRepository<SecurityEventEntity, String>, SecurityEventSampleQueryRepository {
 
 	long countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThan(
 			String clientIp,
