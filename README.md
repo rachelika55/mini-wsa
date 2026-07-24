@@ -66,8 +66,21 @@ matching the application defaults. Flyway creates the schema automatically on fi
 
 ### Run the application
 
+**Option A — with PostgreSQL (default):**
+
 ```bash
+docker compose up -d          # or point at your own Postgres via env vars below
 ./mvnw spring-boot:run
+```
+
+**Option B — no database install (in-memory H2):**
+
+If you don't have Docker or PostgreSQL, run the `local` profile. It uses an in-memory H2 database
+(PostgreSQL compatibility mode) with the same Flyway migration, so the app runs with **only a JDK
+installed**. Data is not persisted across restarts.
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 The service starts on `http://localhost:8080`. Verify it is up:
