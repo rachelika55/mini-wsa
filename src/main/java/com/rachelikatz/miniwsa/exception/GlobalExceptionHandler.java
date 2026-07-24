@@ -59,6 +59,30 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.badRequest().body(body);
 	}
 
+	@ExceptionHandler(PayloadTooLargeException.class)
+	public ResponseEntity<ApiError> handlePayloadTooLarge(
+			PayloadTooLargeException ex, WebRequest request) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				HttpStatus.PAYLOAD_TOO_LARGE.value(),
+				HttpStatus.PAYLOAD_TOO_LARGE.getReasonPhrase(),
+				ex.getMessage(),
+				path(request));
+		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+	}
+
+	@ExceptionHandler(RateLimitExceededException.class)
+	public ResponseEntity<ApiError> handleRateLimit(
+			RateLimitExceededException ex, WebRequest request) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				HttpStatus.TOO_MANY_REQUESTS.value(),
+				HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(),
+				ex.getMessage(),
+				path(request));
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+	}
+
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<ApiError> handleUnreadable(
 			HttpMessageNotReadableException ex, WebRequest request) {

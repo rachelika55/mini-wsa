@@ -5,9 +5,11 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
+import com.rachelikatz.miniwsa.config.IngestionProperties;
 import com.rachelikatz.miniwsa.dto.SecurityEventRequest;
 import com.rachelikatz.miniwsa.exception.FieldViolation;
 import com.rachelikatz.miniwsa.exception.IngestionValidationException;
+import com.rachelikatz.miniwsa.exception.PayloadTooLargeException;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
@@ -27,10 +29,15 @@ public class IngestionPayloadReader {
 
 	private final ObjectMapper objectMapper;
 	private final Validator validator;
+	private final IngestionProperties properties;
 
-	public IngestionPayloadReader(ObjectMapper objectMapper, Validator validator) {
+	public IngestionPayloadReader(
+			ObjectMapper objectMapper,
+			Validator validator,
+			IngestionProperties properties) {
 		this.objectMapper = objectMapper;
 		this.validator = validator;
+		this.properties = properties;
 	}
 
 	public List<SecurityEventRequest> read(JsonNode payload) {
@@ -45,6 +52,11 @@ public class IngestionPayloadReader {
 			if (payload.isEmpty()) {
 				throw new IngestionValidationException(
 						List.of(new FieldViolation("payload", "batch must not be empty")));
+			}
+			if (payload.size() > properties.getMaxBatchSize()) {
+				throw new PayloadTooLargeException(
+						"Batch size " + payload.size() + " exceeds the maximum of "
+								+ properties.getMaxBatchSize());
 			}
 			payload.forEach(nodes::add);
 		} else if (payload.isObject()) {

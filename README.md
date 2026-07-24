@@ -188,7 +188,11 @@ A batch is the same, wrapped in `[ ... ]`.
 { "ingestedCount": 1, "eventIds": ["evt-00132"] }
 ```
 
-**Status codes:** `201` success · `400` validation error (with `violations`) · `409` duplicate event ID.
+**Status codes:** `201` success · `400` validation error (with `violations`) · `409` duplicate event ID ·
+`413` batch too large.
+
+The read APIs (stats, samples) additionally return `429 Too Many Requests` when a client exceeds the
+configured per-IP rate. See [Scaling & resilience](#scaling--resilience).
 
 ### `GET /v1/stats/summary`
 
@@ -366,6 +370,55 @@ path feeding a stream. PostgreSQL is deliberately chosen here as the right tool 
 scope while keeping the query logic portable.
 
 ---
+
+## Scaling & resilience
+
+At assignment scale, synchronous ingestion into PostgreSQL is the simplest correct design. Under a
+real spike, though, request threads and the DB connection pool are shared between writes and analytics —
+so one path can starve the other. This project ships two **cheap guardrails** in code, and documents
+the production shape verbally rather than bolting a broker into the take-home.
+
+### Guardrails (implemented)
+
+- **Bounded batches** — batches larger than `miniwsa.ingest.max-batch-size` (default 1000) are rejected
+  with **413**, capping transaction size, memory, and the in-batch repeat-offender scan.
+- **Rate limiting** — per-client-IP fixed-window limiting on the read APIs (stats + samples),
+  `miniwsa.ratelimit.requests-per-minute` (default 100); excess requests get **429**. Protects the query
+  path from a noisy client (and matches one of the assignment's bonus challenges).
+
+| Property                                | Default | Purpose                        |
+| --------------------------------------- | ------- | ------------------------------ |
+| `miniwsa.ingest.max-batch-size`         | `1000`  | Reject larger batches with 413 |
+| `miniwsa.ratelimit.enabled`             | `true`  | Toggle read-API rate limiting  |
+| `miniwsa.ratelimit.requests-per-minute` | `100`   | Per-client-IP limit before 429 |
+
+### Production target (Kafka) — design, not implemented
+
+An in-process async queue would only *look* like decoupling; it is not durable across a crash. The
+real answer at scale is a durable log between accept and persist:
+
+```mermaid
+flowchart LR
+    Client --> API["Ingest API<br/>validate + produce"]
+    API -->|202 Accepted| Client
+    API --> Topic[("Kafka topic<br/>partitioned by clientIp")]
+    Topic --> W1["Consumer / worker"]
+    Topic --> W2["Consumer / worker"]
+    W1 --> DB[("Store")]
+    W2 --> DB
+    DB --> Reads["Stats / Samples APIs<br/>(rate limited)"]
+```
+
+Why this shape:
+
+- **Spike absorption & backpressure** — the log buffers bursts; consumers drain at a safe rate.
+- **Decoupling & independent scaling** — analytics reads no longer compete with write bursts.
+- **Durability & replay** — events survive restarts and can be reprocessed (e.g. to re-score).
+- **Partition by `clientIp`** — all of an IP's events land on one partition in order, so the
+  repeat-offender window stays local and correctly ordered per consumer.
+
+Trade-offs to own: **eventual consistency** (an event is not queryable until a worker persists it) and
+**at-least-once delivery** → idempotency via the existing `eventId` primary key.
 
 ## Testing
 
