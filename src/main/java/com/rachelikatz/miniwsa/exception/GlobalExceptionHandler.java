@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -31,6 +32,30 @@ public class GlobalExceptionHandler {
 				ex.getMessage(),
 				path(request),
 				ex.getViolations());
+		return ResponseEntity.badRequest().body(body);
+	}
+
+	@ExceptionHandler(InvalidRequestException.class)
+	public ResponseEntity<ApiError> handleInvalidRequest(
+			InvalidRequestException ex, WebRequest request) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				HttpStatus.BAD_REQUEST.value(),
+				HttpStatus.BAD_REQUEST.getReasonPhrase(),
+				ex.getMessage(),
+				path(request));
+		return ResponseEntity.badRequest().body(body);
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ApiError> handleTypeMismatch(
+			MethodArgumentTypeMismatchException ex, WebRequest request) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				HttpStatus.BAD_REQUEST.value(),
+				HttpStatus.BAD_REQUEST.getReasonPhrase(),
+				"Invalid value for query parameter '" + ex.getName() + "'",
+				path(request));
 		return ResponseEntity.badRequest().body(body);
 	}
 
