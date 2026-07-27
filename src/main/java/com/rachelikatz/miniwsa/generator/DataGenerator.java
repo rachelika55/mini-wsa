@@ -14,8 +14,8 @@ import com.rachelikatz.miniwsa.generator.GeneratedEvent.GeneratedRule;
 
 /**
  * Produces realistic-looking security events for load/demo testing. Output is a
- * deterministic function of the seed, so the same seed always yields the same
- * dataset (useful for reproducible demos and tests).
+ * deterministic function of the seed and end time, so the same inputs always
+ * yield the same dataset (useful for reproducible demos and tests).
  *
  * <p>The stream mixes two shapes of traffic:
  * <ul>
@@ -30,7 +30,7 @@ import com.rachelikatz.miniwsa.generator.GeneratedEvent.GeneratedRule;
 public class DataGenerator {
 
 	private static final double WAVE_PROBABILITY = 0.55;
-	private static final int MIN_WAVE_SIZE = 6;
+	private static final int MIN_WAVE_SIZE = 7;
 	private static final int MAX_WAVE_SIZE = 60;
 	private static final Duration MAX_WAVE_SPAN = Duration.ofMinutes(9);
 
@@ -107,14 +107,18 @@ public class DataGenerator {
 		if (totalEvents < 0) {
 			throw new IllegalArgumentException("totalEvents must not be negative");
 		}
+		if (span.isNegative()) {
+			throw new IllegalArgumentException("span must not be negative");
+		}
 		sequence = 0;
 		Instant rangeStart = endTime.minus(span);
+		Duration waveSpan = span.compareTo(MAX_WAVE_SPAN) < 0 ? span : MAX_WAVE_SPAN;
 		List<GeneratedEvent> events = new ArrayList<>(totalEvents);
 
 		while (events.size() < totalEvents) {
 			int remaining = totalEvents - events.size();
 			if (remaining >= MIN_WAVE_SIZE && random.nextDouble() < WAVE_PROBABILITY) {
-				generateWave(events, remaining, rangeStart, endTime);
+				generateWave(events, remaining, rangeStart, endTime, waveSpan);
 			} else {
 				events.add(generateNoise(rangeStart, endTime));
 			}
@@ -122,7 +126,12 @@ public class DataGenerator {
 		return events;
 	}
 
-	private void generateWave(List<GeneratedEvent> events, int remaining, Instant rangeStart, Instant endTime) {
+	private void generateWave(
+			List<GeneratedEvent> events,
+			int remaining,
+			Instant rangeStart,
+			Instant endTime,
+			Duration waveSpan) {
 		int waveSize = Math.min(remaining, MIN_WAVE_SIZE + random.nextInt(MAX_WAVE_SIZE - MIN_WAVE_SIZE + 1));
 
 		Scenario scenario = pick(SCENARIOS);
@@ -134,8 +143,8 @@ public class DataGenerator {
 		GeneratedGeoLocation geo = pick(GEOS);
 		String userAgent = scenario.category() == RuleCategory.BOT ? pick(BOT_AGENTS) : pick(BROWSER_AGENTS);
 
-		Instant waveStart = randomInstantBetween(rangeStart, endTime.minus(MAX_WAVE_SPAN));
-		long spanSeconds = MAX_WAVE_SPAN.getSeconds();
+		Instant waveStart = randomInstantBetween(rangeStart, endTime.minus(waveSpan));
+		long spanSeconds = waveSpan.getSeconds();
 
 		for (int i = 0; i < waveSize; i++) {
 			Instant timestamp = waveStart.plusSeconds((long) (random.nextDouble() * spanSeconds));

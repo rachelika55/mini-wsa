@@ -1,6 +1,7 @@
 package com.rachelikatz.miniwsa.generator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -61,6 +62,26 @@ class DataGeneratorTests {
 			Instant timestamp = Instant.parse(event.timestamp());
 			assertThat(timestamp).isBetween(start, END);
 		}
+	}
+
+	@Test
+	void keepsAttackWavesInsideASpanShorterThanTheMaximumWaveDuration() {
+		Duration shortSpan = Duration.ofMinutes(1);
+		Instant start = END.minus(shortSpan);
+
+		List<GeneratedEvent> events = new DataGenerator(42).generate(1_000, shortSpan, END);
+
+		assertThat(events)
+				.extracting(GeneratedEvent::timestamp)
+				.map(Instant::parse)
+				.allSatisfy(timestamp -> assertThat(timestamp).isBetween(start, END));
+	}
+
+	@Test
+	void rejectsNegativeSpan() {
+		assertThatThrownBy(() -> new DataGenerator(42).generate(10, Duration.ofMinutes(-1), END))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("span must not be negative");
 	}
 
 	@Test

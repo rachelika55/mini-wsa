@@ -20,6 +20,7 @@ Built with **Java 21** and **Spring Boot 4.1**, backed by **PostgreSQL** (with *
 - [Design decisions worth calling out](#design-decisions-worth-calling-out)
 - [What I would improve with more time](#what-i-would-improve-with-more-time)
 - [Challenges and how I solved them](#challenges-and-how-i-solved-them)
+- [One thing I learned](#one-thing-i-learned)
 
 ---
 
@@ -124,11 +125,13 @@ meaningful data.
 | `--count`        | `10000`            | Total number of events to generate                   |
 | `--out`          | `generated-events` | Output directory                                     |
 | `--chunk-size`   | `1000`             | Events per file (one file = one ingest batch)        |
-| `--seed`         | `42`               | RNG seed; the same seed reproduces the same dataset  |
+| `--seed`         | `42`               | RNG seed; reproduces the same traffic shape          |
 | `--span-minutes` | `1440`             | Time window the events span, ending "now"            |
 
 Output is written as one or more JSON-array files (`part-0001.json`, …) that POST directly to
 `/v1/events/ingest`. The command prints a ready-to-run curl loop to load them.
+The pure generator is fully deterministic for the same seed and end time; the CLI intentionally
+anchors timestamps to the current run time.
 
 Files are chunked because ingestion is atomic per request; ~1000-event batches keep each transaction
 a sensible size.
@@ -152,8 +155,9 @@ All request/response bodies are JSON. Errors use a consistent shape:
 
 ### `POST /v1/events/ingest`
 
-Ingests a single event or a batch (JSON array). Validates required fields, enum values, and ISO-8601
-timestamps, assigns a server-side `receivedAt`, classifies and scores each event, and persists them.
+Ingests a single event or a batch (JSON array). Validates required fields, enum values, ISO-8601
+timestamps, numeric ranges, and storage-safe string lengths; assigns a server-side `receivedAt`,
+classifies and scores each event, and persists them.
 The batch is **all-or-nothing**: if any event is invalid or has a duplicate ID, nothing is stored.
 
 **Request (single event):**
@@ -480,5 +484,15 @@ Tests run against an in-memory **H2** database (PostgreSQL compatibility mode) f
   same-IP events from the current batch, using event time throughout.
 - **Meaningful generated data.** Purely random events produce boring, flat analytics. Modeling explicit
   **attack waves** (same IP + path clustered in a sub-10-minute window) makes repeat offenders, top
-  attackers, and top paths visible — and makes the generator a deterministic function of its seed for
-  reproducible demos.
+  attackers, and top paths visible. The pure generator accepts a seed and fixed end time so tests and
+  demos can reproduce the same dataset.
+
+---
+
+## One thing I learned
+
+Assigned application IDs change how Spring Data decides whether `save` should issue an insert or a
+merge. With `eventId` as the primary key, implementing `Persistable<String>` and tracking the entity's
+new state makes new events use `persist`, so the database can reject a duplicate instead of silently
+merging into an existing row. Calling `flush` inside the ingestion transaction then surfaces that
+constraint violation early enough to return a consistent `409 Conflict`.

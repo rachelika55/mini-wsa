@@ -7,7 +7,7 @@ public class IngestionValidationException extends RuntimeException {
 	private final transient List<FieldViolation> violations;
 
 	public IngestionValidationException(List<FieldViolation> violations) {
-		super("Ingestion request failed validation");
+		super("Validation failed for one or more events");
 		this.violations = List.copyOf(violations);
 	}
 

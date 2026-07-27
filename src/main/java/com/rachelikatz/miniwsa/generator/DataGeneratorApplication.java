@@ -27,7 +27,7 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>{@code --count} total events to generate (default 10000)</li>
  *   <li>{@code --out} output directory (default {@code generated-events})</li>
  *   <li>{@code --chunk-size} events per file / ingest batch (default 1000)</li>
- *   <li>{@code --seed} RNG seed for reproducible output (default 42)</li>
+ *   <li>{@code --seed} RNG seed for reproducible traffic shape (default 42)</li>
  *   <li>{@code --span-minutes} time window the events span, ending now (default 1440)</li>
  * </ul>
  */
@@ -50,6 +50,9 @@ public final class DataGeneratorApplication {
 		}
 		if (chunkSize < 1) {
 			throw new IllegalArgumentException("--chunk-size must be at least 1");
+		}
+		if (spanMinutes < 0) {
+			throw new IllegalArgumentException("--span-minutes must not be negative");
 		}
 
 		Instant endTime = Instant.now().truncatedTo(ChronoUnit.SECONDS);

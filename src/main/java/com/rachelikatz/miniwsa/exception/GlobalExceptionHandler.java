@@ -1,8 +1,11 @@
 package com.rachelikatz.miniwsa.exception;
 
+import java.sql.SQLException;
 import java.time.Clock;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +18,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+	private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
 	private final Clock clock;
 
@@ -64,11 +70,11 @@ public class GlobalExceptionHandler {
 			PayloadTooLargeException ex, WebRequest request) {
 		ApiError body = ApiError.of(
 				clock.instant(),
-				HttpStatus.PAYLOAD_TOO_LARGE.value(),
-				HttpStatus.PAYLOAD_TOO_LARGE.getReasonPhrase(),
+				HttpStatus.CONTENT_TOO_LARGE.value(),
+				HttpStatus.CONTENT_TOO_LARGE.getReasonPhrase(),
 				ex.getMessage(),
 				path(request));
-		return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+		return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).body(body);
 	}
 
 	@ExceptionHandler(RateLimitExceededException.class)
@@ -114,6 +120,9 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DataIntegrityViolationException.class)
 	public ResponseEntity<ApiError> handleDataIntegrity(
 			DataIntegrityViolationException ex, WebRequest request) {
+		if (!hasSqlState(ex, UNIQUE_VIOLATION_SQL_STATE)) {
+			return internalServerError(ex, request);
+		}
 		ApiError body = ApiError.of(
 				clock.instant(),
 				HttpStatus.CONFLICT.value(),
@@ -125,6 +134,11 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiError> handleUnexpected(Exception ex, WebRequest request) {
+		return internalServerError(ex, request);
+	}
+
+	private ResponseEntity<ApiError> internalServerError(Exception ex, WebRequest request) {
+		LOGGER.error("Unhandled request failure for {}", path(request), ex);
 		ApiError body = ApiError.of(
 				clock.instant(),
 				HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -132,6 +146,18 @@ public class GlobalExceptionHandler {
 				"Unexpected error",
 				path(request));
 		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+	}
+
+	private boolean hasSqlState(Throwable throwable, String expectedState) {
+		Throwable current = throwable;
+		while (current != null) {
+			if (current instanceof SQLException sqlException
+					&& expectedState.equals(sqlException.getSQLState())) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
 	}
 
 	private String path(WebRequest request) {

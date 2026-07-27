@@ -95,6 +95,38 @@ class EventIngestionControllerIntegrationTests {
 	}
 
 	@Test
+	void rejectsEmptyBatch() {
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body("[]")
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.message").isEqualTo("Validation failed for one or more events");
+	}
+
+	@Test
+	void rejectsValuesOutsideApiAndStorageBounds() {
+		String body = event("evt-invalid", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR")
+				.replace("\"hostname\": \"www.example.com\"", "\"hostname\": \"" + "a".repeat(256) + "\"")
+				.replace("\"statusCode\": 403", "\"statusCode\": 99")
+				.replace("\"requestSize\": 1024", "\"requestSize\": -1");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.violations.length()").isEqualTo(3);
+
+		assertThat(repository.count()).isZero();
+	}
+
+	@Test
 	void rejectsDuplicateEventIdWithinBatch() {
 		String body = "[" + event("evt-dup", "203.0.113.42", "2026-05-20T14:32:10Z",
 				"/api/orders", "LOW", "MONITOR")
@@ -109,6 +141,30 @@ class EventIngestionControllerIntegrationTests {
 				.expectStatus().isEqualTo(409);
 
 		assertThat(repository.count()).isZero();
+	}
+
+	@Test
+	void rejectsEventIdThatAlreadyExists() {
+		String body = event("evt-existing", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isCreated();
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isEqualTo(409)
+				.expectBody()
+				.jsonPath("$.message").isEqualTo("An event with the same ID already exists");
+
+		assertThat(repository.count()).isEqualTo(1);
 	}
 
 	@Test
