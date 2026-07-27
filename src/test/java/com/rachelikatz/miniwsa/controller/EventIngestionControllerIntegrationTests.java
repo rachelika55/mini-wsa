@@ -95,6 +95,79 @@ class EventIngestionControllerIntegrationTests {
 	}
 
 	@Test
+	void rejectsUnknownFields() {
+		String body = event("evt-unknown", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR")
+				.replace("\"responseSize\": 256", "\"responseSize\": 256, \"extraField\": true");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.violations[0].field").isEqualTo("extraField")
+				.jsonPath("$.violations[0].message").isEqualTo("unknown field");
+
+		assertThat(repository.count()).isZero();
+	}
+
+	@Test
+	void rejectsStringForNumericField() {
+		String body = event("evt-string-number", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR")
+				.replace("\"configId\": 14227", "\"configId\": \"14227\"");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.violations[0].field").isEqualTo("configId");
+
+		assertThat(repository.count()).isZero();
+	}
+
+	@Test
+	void rejectsNumericTimestamp() {
+		String body = event("evt-numeric-time", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR")
+				.replace("\"timestamp\": \"2026-05-20T14:32:10Z\"", "\"timestamp\": 0");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.violations[0].field").isEqualTo("timestamp");
+
+		assertThat(repository.count()).isZero();
+	}
+
+	@Test
+	void rejectsFractionForIntegerField() {
+		String body = event("evt-fraction", "203.0.113.42", "2026-05-20T14:32:10Z",
+				"/api/orders", "LOW", "MONITOR")
+				.replace("\"requestSize\": 1024", "\"requestSize\": 1.5");
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(body)
+				.exchange()
+				.expectStatus().isBadRequest()
+				.expectBody()
+				.jsonPath("$.violations[0].field").isEqualTo("requestSize");
+
+		assertThat(repository.count()).isZero();
+	}
+
+	@Test
 	void rejectsEmptyBatch() {
 		restTestClient.post()
 				.uri("/v1/events/ingest")

@@ -14,9 +14,10 @@ import com.rachelikatz.miniwsa.exception.PayloadTooLargeException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.exc.InvalidFormatException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 
 /**
  * Normalizes the ingestion body, which may be a single event object or a
@@ -77,12 +78,20 @@ public class IngestionPayloadReader {
 				violations.add(new FieldViolation(fieldName(prefix, ""), "must be a JSON object"));
 				continue;
 			}
+			JsonNode timestamp = node.get("timestamp");
+			if (timestamp != null && !timestamp.isNull() && !timestamp.isString()) {
+				violations.add(new FieldViolation(
+						fieldName(prefix, "timestamp"),
+						"must be an ISO-8601 string"));
+				continue;
+			}
 
 			SecurityEventRequest event;
 			try {
 				event = objectMapper.treeToValue(node, SecurityEventRequest.class);
-			} catch (InvalidFormatException ex) {
-				violations.add(new FieldViolation(fieldName(prefix, invalidPath(ex)), "invalid value"));
+			} catch (JacksonException ex) {
+				String message = ex instanceof UnrecognizedPropertyException ? "unknown field" : "invalid value";
+				violations.add(new FieldViolation(fieldName(prefix, invalidPath(ex)), message));
 				continue;
 			} catch (RuntimeException ex) {
 				violations.add(new FieldViolation(fieldName(prefix, ""), "malformed event JSON"));
@@ -103,7 +112,7 @@ public class IngestionPayloadReader {
 		return events;
 	}
 
-	private String invalidPath(InvalidFormatException ex) {
+	private String invalidPath(JacksonException ex) {
 		StringBuilder path = new StringBuilder();
 		for (var reference : ex.getPath()) {
 			if (reference.getPropertyName() == null) {

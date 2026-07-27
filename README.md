@@ -132,7 +132,8 @@ Output is written as one or more JSON-array files (`part-0001.json`, …) that P
 `/v1/events/ingest`. The command prints a ready-to-run curl loop to load them.
 The pure generator is fully deterministic for the same seed and end time; the CLI intentionally
 anchors timestamps to the current run time. Events are globally sorted by timestamp before files
-are split, so loading parts in filename order preserves event-time ordering across requests.
+are split, so loading parts in filename order preserves event-time ordering across requests. Reusing
+the same `DataGenerator` instance also reproduces the same result for identical inputs.
 
 Files are chunked because ingestion is atomic per request; ~1000-event batches keep each transaction
 a sensible size.
@@ -156,9 +157,10 @@ All request/response bodies are JSON. Errors use a consistent shape:
 
 ### `POST /v1/events/ingest`
 
-Ingests a single event or a batch (JSON array). Validates required fields, enum values, ISO-8601
-timestamps, numeric ranges, and storage-safe string lengths; assigns a server-side `receivedAt`,
-classifies and scores each event, and persists them.
+Ingests a single event or a batch (JSON array). Strict schema validation rejects unknown fields,
+wrong JSON scalar types, numeric timestamps, invalid enums, out-of-range values, and storage-unsafe
+string lengths. Timestamps must be ISO-8601 strings. Valid events receive a server-side `receivedAt`,
+attack classification, and threat score before persistence.
 The batch is **all-or-nothing**: if any event is invalid or has a duplicate ID, nothing is stored.
 
 **Request (single event):**
@@ -195,6 +197,9 @@ A batch is the same, wrapped in `[ ... ]`.
 
 **Status codes:** `201` success · `400` validation error (with `violations`) · `409` duplicate event ID ·
 `413` batch too large.
+
+Framework-level client errors use the same JSON shape: `404` unknown resource · `405` unsupported
+method · `415` unsupported content type.
 
 The read APIs (stats, samples) additionally return `429 Too Many Requests` when a client exceeds the
 configured per-IP rate. See [Scaling & resilience](#scaling--resilience).
@@ -390,6 +395,8 @@ the production shape verbally rather than bolting a broker into the take-home.
 - **Rate limiting** — per-client-IP fixed-window limiting on the read APIs (stats + samples),
   `miniwsa.ratelimit.requests-per-minute` (default 100); excess requests get **429**. Protects the query
   path from a noisy client (and matches one of the assignment's bonus challenges).
+- **Validated configuration** — numeric guardrail properties must be at least 1; invalid values stop
+  application startup instead of creating a service that rejects every request.
 
 | Property                                | Default | Purpose                        |
 | --------------------------------------- | ------- | ------------------------------ |

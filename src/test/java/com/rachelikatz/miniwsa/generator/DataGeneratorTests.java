@@ -38,6 +38,16 @@ class DataGeneratorTests {
 	}
 
 	@Test
+	void remainsDeterministicWhenGeneratorIsReused() {
+		DataGenerator generator = new DataGenerator(7);
+
+		List<GeneratedEvent> first = generator.generate(500, SPAN, END);
+		List<GeneratedEvent> second = generator.generate(500, SPAN, END);
+
+		assertThat(second).isEqualTo(first);
+	}
+
+	@Test
 	void assignsUniqueEventIds() {
 		List<GeneratedEvent> events = new DataGenerator(1).generate(2_000, SPAN, END);
 		Set<String> ids = events.stream().map(GeneratedEvent::eventId).collect(Collectors.toSet());

@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Fixed-window, per-key rate limiter. Each key (client IP) is allowed
- * {@code maxPerMinute} requests within a rolling one-minute window; the window
+ * {@code maxPerMinute} requests within a fixed one-minute window; the window
  * resets on the first request after it elapses.
  *
  * <p>Thread-safe via {@link ConcurrentHashMap#compute}. This is intentionally an

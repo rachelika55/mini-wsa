@@ -93,10 +93,12 @@ public class DataGenerator {
 					List.of(EventAction.ALERT, EventAction.MONITOR),
 					List.of("/api/v1/login", "/api/v1/token"), 429));
 
+	private final long seed;
 	private final Random random;
 	private int sequence;
 
 	public DataGenerator(long seed) {
+		this.seed = seed;
 		this.random = new Random(seed);
 	}
 
@@ -111,6 +113,7 @@ public class DataGenerator {
 		if (span.isNegative()) {
 			throw new IllegalArgumentException("span must not be negative");
 		}
+		random.setSeed(seed);
 		sequence = 0;
 		Instant rangeStart = endTime.minus(span);
 		Duration waveSpan = span.compareTo(MAX_WAVE_SPAN) < 0 ? span : MAX_WAVE_SPAN;

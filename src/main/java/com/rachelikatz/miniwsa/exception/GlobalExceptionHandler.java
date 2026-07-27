@@ -7,14 +7,18 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -132,9 +136,62 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
 	}
 
+	@ExceptionHandler(NoResourceFoundException.class)
+	public ResponseEntity<ApiError> handleNotFound(
+			NoResourceFoundException ex, WebRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, "Resource not found", request);
+	}
+
+	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+	public ResponseEntity<ApiError> handleMethodNotAllowed(
+			HttpRequestMethodNotSupportedException ex, WebRequest request) {
+		return errorResponse(
+				HttpStatus.METHOD_NOT_ALLOWED,
+				"Request method is not supported",
+				request,
+				ex.getHeaders());
+	}
+
+	@ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+	public ResponseEntity<ApiError> handleUnsupportedMediaType(
+			HttpMediaTypeNotSupportedException ex, WebRequest request) {
+		return errorResponse(
+				HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+				"Content type is not supported",
+				request,
+				ex.getHeaders());
+	}
+
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiError> handleUnexpected(Exception ex, WebRequest request) {
 		return internalServerError(ex, request);
+	}
+
+	private ResponseEntity<ApiError> errorResponse(
+			HttpStatus status,
+			String message,
+			WebRequest request) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				status.value(),
+				status.getReasonPhrase(),
+				message,
+				path(request));
+		return ResponseEntity.status(status).body(body);
+	}
+
+	private ResponseEntity<ApiError> errorResponse(
+			HttpStatus status,
+			String message,
+			WebRequest request,
+			HttpHeaders headers) {
+		ApiError body = ApiError.of(
+				clock.instant(),
+				status.value(),
+				status.getReasonPhrase(),
+				message,
+				path(request));
+		return ResponseEntity.status(status).headers(headers).body(body);
 	}
 
 	private ResponseEntity<ApiError> internalServerError(Exception ex, WebRequest request) {
