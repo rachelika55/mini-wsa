@@ -3,6 +3,7 @@ package com.rachelikatz.miniwsa.generator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
@@ -20,7 +21,7 @@ import com.rachelikatz.miniwsa.generator.GeneratedEvent.GeneratedRule;
  * <p>The stream mixes two shapes of traffic:
  * <ul>
  *   <li><b>Attack waves</b>: bursts from a single client IP hitting a single
- *       path in a sub-10-minute window. Waves large enough (&gt; 6 events)
+ *       path in a sub-10-minute window. Waves of at least 6 events
  *       exercise the repeat-offender bonus and dominate the top-attackers and
  *       top-paths statistics.</li>
  *   <li><b>Background noise</b>: isolated events with varied IPs, paths,
@@ -30,7 +31,7 @@ import com.rachelikatz.miniwsa.generator.GeneratedEvent.GeneratedRule;
 public class DataGenerator {
 
 	private static final double WAVE_PROBABILITY = 0.55;
-	private static final int MIN_WAVE_SIZE = 7;
+	private static final int MIN_WAVE_SIZE = 6;
 	private static final int MAX_WAVE_SIZE = 60;
 	private static final Duration MAX_WAVE_SPAN = Duration.ofMinutes(9);
 
@@ -100,8 +101,8 @@ public class DataGenerator {
 	}
 
 	/**
-	 * Generates exactly {@code totalEvents} events whose timestamps fall within
-	 * {@code [endTime - span, endTime]}.
+	 * Generates exactly {@code totalEvents} events in chronological order whose
+	 * timestamps fall within {@code [endTime - span, endTime]}.
 	 */
 	public List<GeneratedEvent> generate(int totalEvents, Duration span, Instant endTime) {
 		if (totalEvents < 0) {
@@ -123,6 +124,9 @@ public class DataGenerator {
 				events.add(generateNoise(rangeStart, endTime));
 			}
 		}
+		events.sort(Comparator
+				.comparing((GeneratedEvent event) -> Instant.parse(event.timestamp()))
+				.thenComparing(GeneratedEvent::eventId));
 		return events;
 	}
 

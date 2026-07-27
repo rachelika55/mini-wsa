@@ -79,7 +79,7 @@ class SecurityEventRepositoryTests {
 	}
 
 	@Test
-	void countsOneClientIpInsideInclusiveExclusiveTimeWindow() {
+	void countsOneClientIpInsideClosedTimeWindow() {
 		repository.save(completeEvent(
 				"evt-start",
 				"203.0.113.42",
@@ -89,32 +89,32 @@ class SecurityEventRepositoryTests {
 				"203.0.113.42",
 				Instant.parse("2026-05-20T14:05:00Z")));
 		repository.save(completeEvent(
+				"evt-end",
+				"203.0.113.42",
+				Instant.parse("2026-05-20T14:10:00Z")));
+		repository.save(completeEvent(
 				"evt-other-ip",
 				"198.51.100.10",
 				Instant.parse("2026-05-20T14:05:00Z")));
 		repository.flush();
 
-		long count = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThan(
+		long count = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThanEqual(
 				"203.0.113.42",
 				Instant.parse("2026-05-20T14:00:00Z"),
 				Instant.parse("2026-05-20T14:10:00Z"));
 
-		assertThat(count).isEqualTo(2);
+		assertThat(count).isEqualTo(3);
 	}
 
 	@Test
-	void excludesEventsOutsideInclusiveExclusiveTimeWindow() {
+	void excludesEventsOutsideClosedTimeWindow() {
 		repository.save(completeEvent(
 				"evt-before",
 				"203.0.113.42",
 				Instant.parse("2026-05-20T13:59:59Z")));
-		repository.save(completeEvent(
-				"evt-at-end",
-				"203.0.113.42",
-				Instant.parse("2026-05-20T14:10:00Z")));
 		repository.flush();
 
-		long count = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThan(
+		long count = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThanEqual(
 				"203.0.113.42",
 				Instant.parse("2026-05-20T14:00:00Z"),
 				Instant.parse("2026-05-20T14:10:00Z"));

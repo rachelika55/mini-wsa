@@ -131,7 +131,8 @@ meaningful data.
 Output is written as one or more JSON-array files (`part-0001.json`, …) that POST directly to
 `/v1/events/ingest`. The command prints a ready-to-run curl loop to load them.
 The pure generator is fully deterministic for the same seed and end time; the CLI intentionally
-anchors timestamps to the current run time.
+anchors timestamps to the current run time. Events are globally sorted by timestamp before files
+are split, so loading parts in filename order preserves event-time ordering across requests.
 
 Files are chunked because ingestion is atomic per request; ~1000-event batches keep each transaction
 a sensible size.
@@ -448,12 +449,18 @@ Tests run against an in-memory **H2** database (PostgreSQL compatibility mode) f
   requiring explicit bounds avoids ambiguous "all time" aggregates. (Samples filters, by contrast, are
   all optional per the spec.)
 - **Repeat-offender uses event time, not wall-clock.** The 10-minute window is measured against each
-  event's own `timestamp` (`[t − 10m, t)`), so replaying a historical attack wave scores the same
-  regardless of how fast it is uploaded. "More than 5" is interpreted as **6+ prior events** in the
-  window.
+  event's own `timestamp` (`[t − 10m, t]` for previously processed events), so replaying a
+  historical attack wave scores the same regardless of how fast it is uploaded. A batch is sorted by
+  event time for scoring, and "more than 5 events" includes the current event: five prior events make
+  the current (sixth) event eligible. A stable sort lets earlier request items count when several
+  events share the same timestamp.
 - **Batch ingest is atomic.** Any invalid event or duplicate ID rolls back the whole request, which
   keeps client error handling simple and the store internally consistent.
-- **Time ranges are half-open `[from, to)`** everywhere, so adjacent windows tile without double-counting.
+- **Concurrent repeat scoring is best effort.** Two same-IP requests can read the same prior count
+  before either commits. Exact production behavior would require per-IP coordination, such as a
+  Kafka partition or an atomic Redis sorted-set operation; it is intentionally not added here.
+- **Analytics time ranges are half-open `[from, to)`.** Adjacent stats and samples windows therefore
+  tile without double-counting; repeat scoring uses the closed window described above.
 
 ---
 
@@ -480,8 +487,8 @@ Tests run against an in-memory **H2** database (PostgreSQL compatibility mode) f
   queries; under concurrent writes they could disagree. Running the service method in a read-only
   `REPEATABLE_READ` transaction makes every sub-aggregate observe the same snapshot.
 - **Correct repeat-offender scoring within a batch.** A wave uploaded in one request must count its own
-  earlier events, not just what's already stored. The scorer combines the DB window count with earlier
-  same-IP events from the current batch, using event time throughout.
+  earlier events, not just what's already stored. The scorer uses a stable timestamp sort and combines
+  the DB window count with previously processed same-IP events from that batch, including timestamp ties.
 - **Meaningful generated data.** Purely random events produce boring, flat analytics. Modeling explicit
   **attack waves** (same IP + path clustered in a sub-10-minute window) makes repeat offenders, top
   attackers, and top paths visible. The pure generator accepts a seed and fixed end time so tests and

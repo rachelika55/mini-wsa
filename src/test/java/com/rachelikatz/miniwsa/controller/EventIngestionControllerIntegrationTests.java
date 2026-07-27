@@ -168,9 +168,9 @@ class EventIngestionControllerIntegrationTests {
 	}
 
 	@Test
-	void appliesRepeatOffenderBonusOncePriorCountExceedsFive() {
+	void appliesRepeatOffenderBonusToTheSixthEvent() {
 		StringBuilder batch = new StringBuilder("[");
-		for (int i = 0; i < 7; i++) {
+		for (int i = 0; i < 6; i++) {
 			if (i > 0) {
 				batch.append(',');
 			}
@@ -187,8 +187,143 @@ class EventIngestionControllerIntegrationTests {
 				.exchange()
 				.expectStatus().isCreated();
 
-		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(10);
-		assertThat(repository.findById("evt-6").orElseThrow().getThreatScore()).isEqualTo(25);
+		assertThat(repository.findById("evt-4").orElseThrow().getThreatScore()).isEqualTo(10);
+		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(25);
+	}
+
+	@Test
+	void countsEarlierEventsAtTheSameTimestamp() {
+		StringBuilder batch = new StringBuilder("[");
+		for (int i = 0; i < 6; i++) {
+			if (i > 0) {
+				batch.append(',');
+			}
+			batch.append(event(
+					"evt-" + i,
+					"203.0.113.99",
+					"2026-05-20T14:00:00Z",
+					"/api/orders",
+					"LOW",
+					"MONITOR"));
+		}
+		batch.append(']');
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(batch.toString())
+				.exchange()
+				.expectStatus().isCreated();
+
+		assertThat(repository.findById("evt-4").orElseThrow().getThreatScore()).isEqualTo(10);
+		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(25);
+	}
+
+	@Test
+	void includesAnEventExactlyTenMinutesBeforeTheCurrentEvent() {
+		String[] timestamps = {
+				"2026-05-20T13:50:00Z",
+				"2026-05-20T13:51:00Z",
+				"2026-05-20T13:52:00Z",
+				"2026-05-20T13:53:00Z",
+				"2026-05-20T13:59:00Z",
+				"2026-05-20T14:00:00Z"
+		};
+		StringBuilder batch = new StringBuilder("[");
+		for (int i = 0; i < timestamps.length; i++) {
+			if (i > 0) {
+				batch.append(',');
+			}
+			batch.append(event(
+					"evt-" + i,
+					"203.0.113.99",
+					timestamps[i],
+					"/api/orders",
+					"LOW",
+					"MONITOR"));
+		}
+		batch.append(']');
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(batch.toString())
+				.exchange()
+				.expectStatus().isCreated();
+
+		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(25);
+	}
+
+	@Test
+	void scoresOutOfOrderBatchByEventTime() {
+		int[] requestOrder = {5, 0, 4, 1, 3, 2};
+		StringBuilder batch = new StringBuilder("[");
+		for (int index = 0; index < requestOrder.length; index++) {
+			if (index > 0) {
+				batch.append(',');
+			}
+			int eventNumber = requestOrder[index];
+			batch.append(event(
+					"evt-" + eventNumber,
+					"203.0.113.99",
+					"2026-05-20T14:00:0" + eventNumber + "Z",
+					"/api/orders",
+					"LOW",
+					"MONITOR"));
+		}
+		batch.append(']');
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(batch.toString())
+				.exchange()
+				.expectStatus().isCreated()
+				.expectBody()
+				.jsonPath("$.eventIds[0]").isEqualTo("evt-5");
+
+		assertThat(repository.findById("evt-4").orElseThrow().getThreatScore()).isEqualTo(10);
+		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(25);
+	}
+
+	@Test
+	void countsPersistedEventsWhenScoringTheSixthEvent() {
+		StringBuilder firstFive = new StringBuilder("[");
+		for (int i = 0; i < 5; i++) {
+			if (i > 0) {
+				firstFive.append(',');
+			}
+			firstFive.append(event(
+					"evt-" + i,
+					"203.0.113.99",
+					"2026-05-20T14:00:0" + i + "Z",
+					"/api/orders",
+					"LOW",
+					"MONITOR"));
+		}
+		firstFive.append(']');
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(firstFive.toString())
+				.exchange()
+				.expectStatus().isCreated();
+
+		restTestClient.post()
+				.uri("/v1/events/ingest")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(event(
+						"evt-5",
+						"203.0.113.99",
+						"2026-05-20T14:00:05Z",
+						"/api/orders",
+						"LOW",
+						"MONITOR"))
+				.exchange()
+				.expectStatus().isCreated();
+
+		assertThat(repository.findById("evt-5").orElseThrow().getThreatScore()).isEqualTo(25);
 	}
 
 	private String event(

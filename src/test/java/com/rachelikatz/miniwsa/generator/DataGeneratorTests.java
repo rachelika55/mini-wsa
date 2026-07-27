@@ -65,6 +65,16 @@ class DataGeneratorTests {
 	}
 
 	@Test
+	void emitsEventsInChronologicalOrder() {
+		List<GeneratedEvent> events = new DataGenerator(9).generate(1_000, SPAN, END);
+
+		assertThat(events)
+				.extracting(GeneratedEvent::timestamp)
+				.map(Instant::parse)
+				.isSorted();
+	}
+
+	@Test
 	void keepsAttackWavesInsideASpanShorterThanTheMaximumWaveDuration() {
 		Duration shortSpan = Duration.ofMinutes(1);
 		Instant start = END.minus(shortSpan);
@@ -109,7 +119,7 @@ class DataGeneratorTests {
 			sorted.merge(timestamp, 1, Integer::sum);
 		}
 		for (Instant anchor : sorted.keySet()) {
-			int count = sorted.subMap(anchor, true, anchor.plus(Duration.ofMinutes(10)), false).values()
+			int count = sorted.subMap(anchor, true, anchor.plus(Duration.ofMinutes(10)), true).values()
 					.stream().mapToInt(Integer::intValue).sum();
 			if (count > 5) {
 				return true;

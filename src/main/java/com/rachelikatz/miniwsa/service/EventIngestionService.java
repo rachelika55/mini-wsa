@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,7 +30,7 @@ import com.rachelikatz.miniwsa.persistence.repository.SecurityEventRepository;
 public class EventIngestionService {
 
 	private static final Duration REPEAT_WINDOW = Duration.ofMinutes(10);
-	private static final long REPEAT_THRESHOLD = 5;
+	private static final long MINIMUM_PRIOR_EVENTS_FOR_REPEAT = 5;
 
 	private final SecurityEventRepository repository;
 	private final AttackClassifier attackClassifier;
@@ -53,10 +54,13 @@ public class EventIngestionService {
 
 		Instant receivedAt = clock.instant();
 		List<SecurityEventEntity> entities = new ArrayList<>(events.size());
+		List<SecurityEventRequest> scoringOrder = events.stream()
+				.sorted(Comparator.comparing(SecurityEventRequest::timestamp))
+				.toList();
 
-		for (int index = 0; index < events.size(); index++) {
-			SecurityEventRequest event = events.get(index);
-			boolean repeatOffender = isRepeatOffender(event, events, index);
+		for (int index = 0; index < scoringOrder.size(); index++) {
+			SecurityEventRequest event = scoringOrder.get(index);
+			boolean repeatOffender = isRepeatOffender(event, scoringOrder, index);
 			AttackType attackType = attackClassifier.classify(event.rule().category());
 			int threatScore = threatScoreCalculator.calculate(
 					event.rule().severity(),
@@ -88,9 +92,12 @@ public class EventIngestionService {
 	}
 
 	/**
-	 * Counts prior same-IP events in the half-open event-time window
-	 * {@code [timestamp - 10m, timestamp)} using already-stored events plus
-	 * earlier events in this batch, then applies the "more than five" threshold.
+	 * Counts previously processed same-IP events in the closed event-time window
+	 * {@code [timestamp - 10m, timestamp]} using already-stored events plus
+	 * earlier events in the stable, timestamp-sorted batch. The current event is
+	 * not stored yet and is after the scanned batch prefix, so it never counts
+	 * itself. Including it when applying "more than five events" means five prior
+	 * events are enough for the current (sixth) event to receive the bonus.
 	 * Event time is used (not receipt time) so replayed attack waves are scored
 	 * by when they occurred, not how fast they were uploaded.
 	 */
@@ -101,19 +108,19 @@ public class EventIngestionService {
 		Instant to = event.timestamp();
 		Instant from = to.minus(REPEAT_WINDOW);
 
-		long priorCount = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThan(
+		long priorCount = repository.countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThanEqual(
 				event.clientIp(), from, to);
 
 		for (int i = 0; i < currentIndex; i++) {
 			SecurityEventRequest earlier = batch.get(i);
 			if (earlier.clientIp().equals(event.clientIp())
 					&& !earlier.timestamp().isBefore(from)
-					&& earlier.timestamp().isBefore(to)) {
+					&& !earlier.timestamp().isAfter(to)) {
 				priorCount++;
 			}
 		}
 
-		return priorCount > REPEAT_THRESHOLD;
+		return priorCount >= MINIMUM_PRIOR_EVENTS_FOR_REPEAT;
 	}
 
 	private SecurityEventEntity toEntity(

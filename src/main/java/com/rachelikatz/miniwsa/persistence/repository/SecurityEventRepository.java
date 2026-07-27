@@ -17,10 +17,10 @@ import com.rachelikatz.miniwsa.persistence.projection.PathAggregate;
 public interface SecurityEventRepository
 		extends JpaRepository<SecurityEventEntity, String>, SecurityEventSampleQueryRepository {
 
-	long countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThan(
+	long countByClientIpAndTimestampGreaterThanEqualAndTimestampLessThanEqual(
 			String clientIp,
 			Instant fromInclusive,
-			Instant toExclusive);
+			Instant toInclusive);
 
 	@Query("""
 			select count(e) from SecurityEventEntity e
